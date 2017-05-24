@@ -2,33 +2,36 @@ package com.bikeemotion.quartz.jobstore.hazelcast;
 
 import org.quartz.DateBuilder;
 
-import java.io.Serializable;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 
 import org.quartz.JobKey;
 import org.quartz.TriggerKey;
 import org.quartz.spi.OperableTrigger;
 
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.io.Input;
+import com.esotericsoftware.kryo.io.Output;
+import com.hazelcast.nio.serialization.Portable;
+import com.hazelcast.nio.serialization.PortableReader;
+import com.hazelcast.nio.serialization.PortableWriter;
 
-public class TriggerWrapper implements Serializable {
+public class TriggerWrapper implements Portable {
 
-    private static final long serialVersionUID = 1L;
+    final static int ID = 100;
 
-    public final TriggerKey key;
+    private TriggerKey key;
 
-    public final JobKey jobKey;
+    private JobKey jobKey;
 
-    public final OperableTrigger trigger;
+    private OperableTrigger trigger;
 
-    private final Long acquiredAt;
+    private Long acquiredAt;
+
+    private Long nextFireTime;
 
     private TriggerState state;
-
-    public Long getNextFireTime() {
-
-        return trigger == null || trigger.getNextFireTime() == null
-                ? null
-                : trigger.getNextFireTime().getTime();
-    }
 
     private TriggerWrapper(OperableTrigger trigger, TriggerState state) {
 
@@ -36,10 +39,10 @@ public class TriggerWrapper implements Serializable {
             throw new IllegalArgumentException("Trigger cannot be null!");
         }
         this.trigger = trigger;
-        key = trigger.getKey();
-        this.jobKey = trigger.getJobKey();
+        setKey(trigger.getKey());
+        this.setJobKey(trigger.getJobKey());
         this.state = state;
-        
+
         // Change to normal if acquired is not released in 5 seconds
         if (state == TriggerState.ACQUIRED) {
             acquiredAt = DateBuilder.newDate().build().getTime();
@@ -48,30 +51,137 @@ public class TriggerWrapper implements Serializable {
         }
     }
 
-    public static TriggerWrapper newTriggerWrapper(OperableTrigger trigger) {
+    public TriggerWrapper() {
+        // TODO Auto-generated constructor stub
+    }
+
+    public static TriggerWrapper newTriggerWrapper (OperableTrigger trigger) {
 
         return newTriggerWrapper(trigger, TriggerState.NORMAL);
     }
 
-    public static TriggerWrapper newTriggerWrapper(TriggerWrapper tw,
-            TriggerState state) {
+    public static TriggerWrapper newTriggerWrapper (TriggerWrapper tw, TriggerState state) {
 
         return new TriggerWrapper(tw.trigger, state);
     }
 
-    public static TriggerWrapper newTriggerWrapper(OperableTrigger trigger,
-            TriggerState state) {
+    public static TriggerWrapper newTriggerWrapper (OperableTrigger trigger, TriggerState state) {
 
         TriggerWrapper tw = new TriggerWrapper(trigger, state);
         return tw;
     }
 
+    public Long getNextFireTime () {
+        if (trigger == null || trigger.getNextFireTime() == null) {
+            if (nextFireTime==null) {
+                return 0L;
+            } else {
+                return nextFireTime;
+            }
+        } else {
+            return trigger.getNextFireTime().getTime();
+        }
+    }
+
+    public void setNextFireTime (Long nextFireTime) {
+        this.nextFireTime = nextFireTime;
+    }
+
+    public OperableTrigger getTrigger () {
+
+        return this.trigger;
+    }
+
+    public TriggerState getState () {
+
+        return state;
+    }
+
+    public Long getAcquiredAt () {
+        if (acquiredAt == null) {
+            return 0L;
+        }
+        return acquiredAt;
+    }
+
     @Override
-    public boolean equals(Object obj) {
+    public String toString () {
+
+        return "TriggerWrapper{" + "trigger=" + trigger + ", state=" + state + ", nextFireTime=" + getNextFireTime() + ", acquiredAt="
+            + getAcquiredAt() + '}';
+    }
+
+    @Override
+    public int getClassId () {
+        return ID;
+    }
+
+    @Override
+    public int getFactoryId () {
+        return 1;
+    }
+
+    @Override
+    public void readPortable (PortableReader reader) throws IOException {
+        this.setNextFireTime(reader.readLong("nextFireTime"));
+        this.setAcquiredAt(reader.readLong("acquiredAt"));
+        String keyString = reader.readUTF("key");
+        if (keyString != null) {
+            String[] keyParts = keyString.split("\\.", 2);
+            if (keyParts.length==2) {
+                this.setKey(new TriggerKey(keyParts[1], keyParts[0]));
+            }
+            if (keyParts.length==1) {
+                this.setKey(new TriggerKey(keyParts[0]));
+            }
+        }
+        keyString = reader.readUTF("jobKey");
+        if (keyString != null) {
+            String[] keyParts = keyString.split("\\.", 2);
+            if (keyParts.length==2) {
+                this.setJobKey(new JobKey(keyParts[1], keyParts[0]));
+            }
+            if (keyParts.length==1) {
+                this.setJobKey(new JobKey(keyParts[0]));
+            }
+        }
+        this.setState(TriggerState.valueOf(reader.readUTF("state")));
+        
+        
+        
+        byte[] triggerBytes = reader.readByteArray("trigger");
+        ByteArrayInputStream bais = new ByteArrayInputStream(triggerBytes);
+        
+        Kryo kryo = new Kryo();
+        Input input = new Input(bais);
+        this.setTrigger(kryo.readObject(input, OperableTrigger.class));
+        input.close();
+    }
+
+    @Override
+    public void writePortable (PortableWriter writer) throws IOException {
+          
+        writer.writeLong("nextFireTime", getNextFireTime());
+        writer.writeLong("acquiredAt", getAcquiredAt());
+        writer.writeUTF("key", key.toString());
+        writer.writeUTF("jobKey", jobKey.toString());
+        writer.writeUTF("state", state.name());
+        
+        Kryo kryo = new Kryo();
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        Output output = new Output(bos);
+        kryo.writeObject(output, trigger);
+        output.close();
+        writer.writeByteArray("trigger", bos.toByteArray());
+
+    }
+
+    @Override
+    public boolean equals (Object obj) {
 
         if (obj instanceof TriggerWrapper) {
             TriggerWrapper tw = (TriggerWrapper) obj;
-            if (tw.key.equals(this.key)) {
+            if (tw.getKey().equals(this.getKey())) {
                 return true;
             }
         }
@@ -80,35 +190,37 @@ public class TriggerWrapper implements Serializable {
     }
 
     @Override
-    public int hashCode() {
+    public int hashCode () {
 
-        return key.hashCode();
+        return getKey().hashCode();
     }
 
-    public OperableTrigger getTrigger() {
-
-        return this.trigger;
+    public TriggerKey getKey () {
+        return key;
     }
 
-    public TriggerState getState() {
-
-        return state;
+    public void setKey (TriggerKey key) {
+        this.key = key;
     }
 
-    public Long getAcquiredAt() {
-      
-        return acquiredAt;
+    public JobKey getJobKey () {
+        return jobKey;
     }
 
-    @Override
-    public String toString() {
+    public void setJobKey (JobKey jobKey) {
+        this.jobKey = jobKey;
+    }
+    
+    public void setTrigger (OperableTrigger trigger) {
+        this.trigger = trigger;
+    }
 
-        return "TriggerWrapper{" 
-            + "trigger=" + trigger
-            + ", state=" + state
-            + ", nextFireTime=" + getNextFireTime()
-            + ", acquiredAt=" + getAcquiredAt()
-            + '}';
+    public void setAcquiredAt (Long acquiredAt) {
+        this.acquiredAt = acquiredAt;
+    }
+
+    public void setState (TriggerState state) {
+        this.state = state;
     }
 
 }
