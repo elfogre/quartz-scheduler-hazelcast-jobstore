@@ -1,31 +1,39 @@
 package com.bikeemotion.quartz.jobstore.hazelcast;
 
-import org.quartz.DateBuilder;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 
+import org.quartz.DateBuilder;
 import org.quartz.JobKey;
 import org.quartz.TriggerKey;
 import org.quartz.spi.OperableTrigger;
 
-import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.io.Input;
-import com.esotericsoftware.kryo.io.Output;
-import com.hazelcast.nio.serialization.Portable;
-import com.hazelcast.nio.serialization.PortableReader;
-import com.hazelcast.nio.serialization.PortableWriter;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
-public class TriggerWrapper implements Portable {
+public class TriggerWrapper {
 
     final static int ID = 100;
 
+    @JsonIgnore
     private TriggerKey key;
 
+    private String keyName;
+    private String keyGroup;
+
+    @JsonIgnore
     private JobKey jobKey;
 
+    private String jobKeyName;
+    private String jobKeyGroup;
+
+    @JsonIgnore
     private OperableTrigger trigger;
+    
+    @SuppressWarnings("unused")
+    private byte[] triggerSerialized;
 
     private Long acquiredAt;
 
@@ -40,7 +48,13 @@ public class TriggerWrapper implements Portable {
         }
         this.trigger = trigger;
         setKey(trigger.getKey());
-        this.setJobKey(trigger.getJobKey());
+        setKeyGroup(key.getGroup());
+        setKeyName(key.getName());
+
+        setJobKey(trigger.getJobKey());
+        setJobKeyGroup(jobKey.getGroup());
+        setJobKeyName(jobKey.getName());
+
         this.state = state;
 
         // Change to normal if acquired is not released in 5 seconds
@@ -73,7 +87,7 @@ public class TriggerWrapper implements Portable {
 
     public Long getNextFireTime () {
         if (trigger == null || trigger.getNextFireTime() == null) {
-            if (nextFireTime==null) {
+            if (nextFireTime == null) {
                 return 0L;
             } else {
                 return nextFireTime;
@@ -112,71 +126,6 @@ public class TriggerWrapper implements Portable {
     }
 
     @Override
-    public int getClassId () {
-        return ID;
-    }
-
-    @Override
-    public int getFactoryId () {
-        return 1;
-    }
-
-    @Override
-    public void readPortable (PortableReader reader) throws IOException {
-        this.setNextFireTime(reader.readLong("nextFireTime"));
-        this.setAcquiredAt(reader.readLong("acquiredAt"));
-        String keyString = reader.readUTF("key");
-        if (keyString != null) {
-            String[] keyParts = keyString.split("\\.", 2);
-            if (keyParts.length==2) {
-                this.setKey(new TriggerKey(keyParts[1], keyParts[0]));
-            }
-            if (keyParts.length==1) {
-                this.setKey(new TriggerKey(keyParts[0]));
-            }
-        }
-        keyString = reader.readUTF("jobKey");
-        if (keyString != null) {
-            String[] keyParts = keyString.split("\\.", 2);
-            if (keyParts.length==2) {
-                this.setJobKey(new JobKey(keyParts[1], keyParts[0]));
-            }
-            if (keyParts.length==1) {
-                this.setJobKey(new JobKey(keyParts[0]));
-            }
-        }
-        this.setState(TriggerState.valueOf(reader.readUTF("state")));
-        
-        
-        
-        byte[] triggerBytes = reader.readByteArray("trigger");
-        ByteArrayInputStream bais = new ByteArrayInputStream(triggerBytes);
-        
-        Kryo kryo = new Kryo();
-        Input input = new Input(bais);
-        this.setTrigger(kryo.readObject(input, OperableTrigger.class));
-        input.close();
-    }
-
-    @Override
-    public void writePortable (PortableWriter writer) throws IOException {
-          
-        writer.writeLong("nextFireTime", getNextFireTime());
-        writer.writeLong("acquiredAt", getAcquiredAt());
-        writer.writeUTF("key", key.toString());
-        writer.writeUTF("jobKey", jobKey.toString());
-        writer.writeUTF("state", state.name());
-        
-        Kryo kryo = new Kryo();
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        Output output = new Output(bos);
-        kryo.writeObject(output, trigger);
-        output.close();
-        writer.writeByteArray("trigger", bos.toByteArray());
-
-    }
-
-    @Override
     public boolean equals (Object obj) {
 
         if (obj instanceof TriggerWrapper) {
@@ -195,24 +144,34 @@ public class TriggerWrapper implements Portable {
         return getKey().hashCode();
     }
 
+    @JsonIgnore
     public TriggerKey getKey () {
+        if (key == null) {
+            key = new TriggerKey(keyName, keyGroup);
+        }
         return key;
     }
 
+    @JsonIgnore
     public void setKey (TriggerKey key) {
         this.key = key;
     }
 
+    @JsonIgnore
     public JobKey getJobKey () {
+        if (jobKey == null) {
+            jobKey = new JobKey(jobKeyName, jobKeyGroup);
+        }
         return jobKey;
     }
 
+    @JsonIgnore
     public void setJobKey (JobKey jobKey) {
         this.jobKey = jobKey;
     }
-    
+
     public void setTrigger (OperableTrigger trigger) {
-        this.trigger = trigger;
+        this.trigger =  trigger;
     }
 
     public void setAcquiredAt (Long acquiredAt) {
@@ -221,6 +180,56 @@ public class TriggerWrapper implements Portable {
 
     public void setState (TriggerState state) {
         this.state = state;
+    }
+
+    public String getKeyGroup () {
+        return keyGroup;
+    }
+
+    public void setKeyGroup (String keyGroup) {
+        this.keyGroup = keyGroup;
+    }
+
+    public String getKeyName () {
+        return keyName;
+    }
+
+    public void setKeyName (String keyName) {
+        this.keyName = keyName;
+    }
+
+    public String getJobKeyName () {
+        return jobKeyName;
+    }
+
+    public void setJobKeyName (String jobKeyName) {
+        this.jobKeyName = jobKeyName;
+    }
+
+    public String getJobKeyGroup () {
+        return jobKeyGroup;
+    }
+
+    public void setJobKeyGroup (String jobKeyGroup) {
+        this.jobKeyGroup = jobKeyGroup;
+    }
+
+    public byte[] getTriggerSerialized () throws IOException {
+        
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        ObjectOutputStream out = new ObjectOutputStream(bos);
+        out.writeObject(trigger);
+        out.close();
+        
+        return bos.toByteArray();
+    }
+
+    public void setTriggerSerialized (byte[] triggerSerialized) throws IOException, ClassNotFoundException {
+        this.triggerSerialized = triggerSerialized;
+        
+        ByteArrayInputStream bis = new ByteArrayInputStream(triggerSerialized);
+        ObjectInputStream in = new ObjectInputStream(bis);
+        this.trigger = (OperableTrigger) in.readObject();
     }
 
 }

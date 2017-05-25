@@ -35,7 +35,7 @@
         <quartz.version>2.2.3</quartz.version>
         <guava.version>17.0</guava.version>
         <joda.time.version>2.4</joda.time.version>
-        <kryo.version>4.0.0</kryo.version>
+        <jackson.version>2.8.8</jackson.version>
     
         <osgi.import.pkg>*</osgi.import.pkg>
         <osgi.export.pkg>com.bikeemotion.quartz.jobstore.*</osgi.export.pkg>
@@ -78,11 +78,17 @@
         </dependency>
         
         <dependency>
-		    <groupId>com.esotericsoftware</groupId>
-		    <artifactId>kryo</artifactId>
-		    <version>${kryo.version}</version>
+		    <groupId>com.fasterxml.jackson.core</groupId>
+		    <artifactId>jackson-databind</artifactId>
+		    <version>${jackson.version}</version>
 		</dependency>
-
+		
+		<dependency>
+		    <groupId>com.fasterxml.jackson.core</groupId>
+		    <artifactId>jackson-core</artifactId>
+		    <version>${jackson.version}</version>
+		</dependency>
+		
         <!-- Test Dependencies -->
         <dependency>
             <groupId>org.testng</groupId>
